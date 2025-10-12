@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width" />
+<title>Public Transport Accessibility – Merri-bek</title>
+
+<link rel="stylesheet" href="css/leaflet.css" />
+<link rel="stylesheet" href="css/qgis2web.css" />
+<link rel="stylesheet" href="css/fontawesome-all.min.css" />
+
+<style>
+html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; }
+/* Title + About */
+.title-card{ position:absolute; top:10px; left:64px; z-index:1000; background:rgba(255,255,255,.9); border-radius:8px; padding:10px 14px; box-shadow:0 2px 6px rgba(0,0,0,.2); max-width:380px; font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+.title-card h1{ margin:0 0 6px; font-size:18px; font-weight:700; }
+.title-card p{ margin:0; font-size:12px; line-height:1.25; color:#333; }
+/* North arrow */
+.north-arrow{ position:absolute; right:12px; bottom:120px; z-index:999; width:32px; height:32px; background:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><polygon points="32,6 42,26 22,26" fill="#111"/><circle cx="32" cy="38" r="10" fill="#fff" stroke="#111" stroke-width="2"/><text x="32" y="42" font-size="12" font-family="Arial" text-anchor="middle" fill="#111">N</text></svg>') no-repeat center/contain; opacity:.9; }
+/* Right panel */
+.layer-panel{ position:absolute; top:10px; right:10px; z-index:1000; background:rgba(255,255,255,.95); border-radius:8px; padding:8px 10px; box-shadow:0 2px 6px rgba(0,0,0,.2); font:13px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; width:260px; max-height:50vh; overflow:auto; }
+.layer-panel h3{ margin:4px 0 6px; font-size:14px; }
+.layer-panel details{ margin:6px 0; }
+.layer-panel summary{ cursor:pointer; font-weight:600; }
+.layer-panel .group{ margin:6px 0 4px; font-weight:600; }
+.layer-panel label{ display:block; margin:4px 0; cursor:pointer; }
+.layer-panel button{ margin:2px 2px; font-size:11px; }
+/* Legend (bottom-right) */
+.legend{ position:absolute; right:10px; bottom:20px; z-index:1000; background:rgba(255,255,255,.95); border-radius:8px; padding:8px 10px; box-shadow:0 2px 6px rgba(0,0,0,.2); font:12px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; max-width:360px; max-height:40vh; overflow:auto; }
+.legend h4{ margin:0 0 6px; font-size:13px; }
+.legend .row{ display:flex; align-items:center; margin:4px 0; }
+.swatch{ width:16px; height:10px; margin-right:8px; border:1px solid rgba(0,0,0,.25); }
+.dot-swatch{ width:10px; height:10px; border-radius:50%; margin-right:8px; border:1px solid rgba(0,0,0,.25); }
+.line-swatch{ width:24px; height:4px; margin-right:8px; border-radius:2px; }
+/* Zoom offset */
+.leaflet-top.leaflet-left .leaflet-control-zoom{ margin-top:92px; margin-left:10px; }
+/* Live panel */
+.leaflet-control.livehub { max-width: 360px; }
+.livehub .tabs { display:flex; gap:6px; margin:6px 0 8px; }
+.livehub .tabs button{ border:1px solid rgba(0,0,0,.15); border-radius:6px; padding:4px 8px; background:#fff; cursor:pointer; font-size:12px; }
+.livehub .tabs button.active{ background:#f3f3f3; font-weight:600; }
+.livehub .body{ max-height:240px; overflow-y:auto; }
+.livehub .row{ margin:2px 0; }
+.livehub .dot{ display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px; }
+.livehub .muted{ opacity:.7; }
+.livehub .footer{ display:flex; align-items:center; gap:8px; margin-top:6px; }
+.livehub .footer button{ border:1px solid rgba(0,0,0,.15); border-radius:6px; padding:4px 8px; background:#fff; cursor:pointer; font-size:12px; }
+/* License / attribution footer */
+.license-card{
+  position:absolute; left:10px; bottom:10px; z-index:1000;
+  background:rgba(255,255,255,.95); border-radius:8px; padding:6px 10px;
+  box-shadow:0 2px 6px rgba(0,0,0,.2);
+  font:11px/1.3 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  max-width:320px;
+}
+.license-card p{ margin:4px 0; }
+.license-card img{ height:20px; vertical-align:middle; }
+
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="title-card">
+  <h1>Public Transport Accessibility – Merri-bek</h1>
+  <p>This web map shows walking time (minutes) from each mesh block to the closest train, tram, or bus stop. Toggle layers to compare modes and explore accessibility across Merri-bek.</p>
+</div>
+
+<div class="north-arrow" title="North"></div>
+
+<div class="layer-panel" id="layerPanel">
+  <h3>Layers</h3>
+  <label><input type="checkbox" id="chkTrainAcc" /> Train accessibility (mins)</label>
+  <label><input type="checkbox" id="chkTramAcc"  /> Tram accessibility (mins)</label>
+  <label><input type="checkbox" id="chkBusAcc"   /> Bus accessibility (mins)</label>
+
+  <details id="busRoutesGroup">
+    <summary>Bus</summary>
+    <label><input type="checkbox" id="chkBusRoutes" /> Bus routes</label>
+    <label><input type="checkbox" id="chkBusStops"  /> Bus stops</label>
+    <div class="group">
+      Show specific bus routes:
+      <button type="button" onclick="toggleAll(busRoutePack, true)">All</button>
+      <button type="button" onclick="toggleAll(busRoutePack, false)">None</button>
+    </div>
+    <div id="busRouteList"></div>
+  </details>
+
+  <details id="tramRoutesGroup" open>
+    <summary>Tram</summary>
+    <label><input type="checkbox" id="chkTramRoutes" /> Tram routes</label>
+    <label><input type="checkbox" id="chkTramStops"  /> Tram stops</label>
+    <div class="group">
+      Show specific tram routes:
+      <button type="button" onclick="toggleAll(tramRoutePack, true)">All</button>
+      <button type="button" onclick="toggleAll(tramRoutePack, false)">None</button>
+    </div>
+    <div id="tramRouteList"></div>
+  </details>
+
+  <details id="trainRoutesGroup">
+    <summary>Train</summary>
+    <label><input type="checkbox" id="chkTrainRoutes" /> Train routes</label>
+    <label><input type="checkbox" id="chkTrainStops"  /> Train stops</label>
+    <div class="group">
+      Show specific train lines:
+      <button type="button" onclick="toggleAll(trainRoutePack, true)">All</button>
+      <button type="button" onclick="toggleAll(trainRoutePack, false)">None</button>
+    </div>
+    <div id="trainRouteList"></div>
+  </details>
+</div>
+
+<div class="legend" id="legendBox"></div>
+
+<script src="js/leaflet.js"></script>
+<script src="js/leaflet.rotatedMarker.js"></script>
+<script src="js/leaflet.pattern.js"></script>
+<script src="js/leaflet-hash.js"></script>
+<script src="js/Autolinker.min.js"></script>
+<script src="js/rbush.min.js"></script>
+<script src="js/labelgun.min.js"></script>
+<script src="js/labels.js"></script>
+
+<script src="data/TrainAccessibilityMinutes_1.js"></script>
+<script src="data/BusAccessibilityMinutes_2.js"></script>
+<script src="data/TramAccessibilityMinutes_3.js"></script>
+<script src="data/Clipped_Routes_Train_6.js"></script>
+<script src="data/Clipped_Stops_Train_7.js"></script>
+<script src="data/Clipped_Routes_Tram_8.js"></script>
+<script src="data/Clipped_Stops_Tram_9.js"></script>
+<script src="data/Clipped_Routes_Bus_10.js"></script>
+<script src="data/Clipped_Buses_11.js"></script>
+
+<div class="legend" id="legendBox"></div>
+
+<!-- License / attribution -->
+<div class="license-card">
+  <p>
+    <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="license noopener">
+      <img src="https://licensebuttons.net/l/by/4.0/88x31.png" alt="CC BY 4.0 License" />
+    </a>
+  </p>
+  <p>
+    "This Cloud-based Open-source GIS Application is developed" by
+    <a href="Callum Hampson-Clarke" target="_blank" rel="noopener">Your Name</a>
+    — <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="license noopener">CC BY 4.0</a>
+  </p>
+</div>
+
+
+<script>
+// ====================== Map base ======================
+const map = L.map('map', { zoomControl: true, maxZoom: 28, minZoom: 1 });
+new L.Hash(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 19
+}).addTo(map);
+map.setView([-37.74, 144.96], 12);
+
+const autolinker = new Autolinker({ truncate: { length: 30, location: 'smart' } });
+const $ = (id)=>document.getElementById(id);
+const fmt = (v)=> v==null ? '' : String(v);
+
+// =================== Accessibility palettes ===================
+function choroplethFill(val, breaks, colors){ for (let i=0;i<breaks.length-1;i++) if (val>=breaks[i] && val<=breaks[i+1]) return colors[i]; return colors[colors.length-1]; }
+const busBreaks=[0.2,4.0,7.8,11.6,15.4,19.2], busColors=['#2b83ba','#abdda4','#ffffbf','#fdae61','#d7191c'];
+const trainBreaks=[0.8,8.5,13.5,18.2,23.5,45.6], trainColors=['#2b83ba','#abdda4','#ffffbf','#fdae61','#d7191c'];
+const tramBreaks=[0.09,3.79,7.28,17.37,43.95,107.08], tramColors=['#2b83ba','#abdda4','#ffffbf','#fdae61','#d7191c'];
+
+// ===================== N/A mesh blocks =====================
+const NA_MESH_BLOCKS = ['20631938510','20631936490','20720440000','20470300000','20714680000','20472080000','20631993660','20477603000','20631994450','20631991420','20463690000','20461910000','20639760000'];
+const isNAFeature = (f)=> NA_MESH_BLOCKS.includes(String(f.properties['MB_CODE21']));
+
+// ===================== Layers =====================
+function styleTrainAcc(f){ if (isNAFeature(f)) return { color:'#cccccc', weight:1, fill:true, fillOpacity:1, fillColor:'#ffffff' };
+  const v=+f.properties['od_matrix_train_min_per_meshblock_clean_Minutes'];
+  return { color:'#2323238c', weight:1, fill:true, fillOpacity:1, fillColor: choroplethFill(v, trainBreaks, trainColors) };
+}
+const layerTrainAcc=L.geoJson(json_TrainAccessibilityMinutes_1,{style:styleTrainAcc,
+  onEachFeature:(f,l)=>{ if (isNAFeature(f)) l.bindPopup('<b>Access to closest train stop (mins)</b><br>No data available');
+    else l.bindPopup('<b>Access to closest train stop (mins)</b><br>'+autolinker.link(fmt(f.properties['od_matrix_train_min_per_meshblock_clean_Minutes']))+
+      (f.properties['Clipped_Stops_Train_stop_name']?'<br><b>Closest stop:</b> '+autolinker.link(fmt(f.properties['Clipped_Stops_Train_stop_name'])):'')); }});
+
+function styleBusAcc(f){ if (isNAFeature(f)) return { color:'#cccccc', weight:1, fill:true, fillOpacity:1, fillColor:'#ffffff' };
+  const v=+f.properties['od_matrix_bus_min_per_meshblock_clean_Minutes'];
+  return { color:'#2323238c', weight:1, fill:true, fillOpacity:1, fillColor: choroplethFill(v, busBreaks, busColors) };
+}
+const layerBusAcc=L.geoJson(json_BusAccessibilityMinutes_2,{style:styleBusAcc,
+  onEachFeature:(f,l)=>{ if (isNAFeature(f)) l.bindPopup('<b>Access to closest bus stop (mins)</b><br>No data available');
+    else l.bindPopup('<b>Access to closest bus stop (mins)</b><br>'+autolinker.link(fmt(f.properties['od_matrix_bus_min_per_meshblock_clean_Minutes']))+
+      (f.properties['Clipped_Buses_stop_name']?'<br><b>Closest stop:</b> '+autolinker.link(fmt(f.properties['Clipped_Buses_stop_name'])):'')); }});
+
+function styleTramAcc(f){ if (isNAFeature(f)) return { color:'#cccccc', weight:1, fill:true, fillOpacity:1, fillColor:'#ffffff' };
+  const v=+f.properties['od_matrix_tram_min_per_meshblock_clean_Minutes_Tram'];
+  return { color:'#2323238c', weight:1, fill:true, fillOpacity:1, fillColor: choroplethFill(v, tramBreaks, tramColors) };
+}
+const layerTramAcc=L.geoJson(json_TramAccessibilityMinutes_3,{style:styleTramAcc,
+  onEachFeature:(f,l)=>{ if (isNAFeature(f)) l.bindPopup('<b>Access to closest tram stop (mins)</b><br>No data available');
+    else l.bindPopup('<b>Access to closest tram stop (mins)</b><br>'+autolinker.link(fmt(f.properties['od_matrix_tram_min_per_meshblock_clean_Minutes_Tram']))+
+      (f.properties['Clipped_Stops_Tram_stop_name']?'<br><b>Closest stop:</b> '+autolinker.link(fmt(f.properties['Clipped_Stops_Tram_stop_name'])):'')); }});
+
+// Stops
+const layerBusStops=L.geoJson(json_Clipped_Buses_11,{pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,color:'#535353',weight:2,fill:true,fillOpacity:1,fillColor:'#cbcbcb'}),
+  onEachFeature:(f,l)=>l.bindPopup('<b>'+autolinker.link(fmt(f.properties['stop_name']))+'</b>'+(f.properties['repro_bus_with_route_numbers_route_numbers']?'<br>Routes: '+autolinker.link(fmt(f.properties['repro_bus_with_route_numbers_route_numbers'])):''))});
+const layerTramStops=L.geoJson(json_Clipped_Stops_Tram_9,{pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:4,color:'#353535',weight:1,fill:true,fillOpacity:1,fillColor:'#30123b'}),
+  onEachFeature:(f,l)=>l.bindPopup('<b>'+autolinker.link(fmt(f.properties['stop_name']))+'</b>'+(f.properties['repro_tram_with_route_numbers_route_numbers']?'<br>Routes: '+autolinker.link(fmt(f.properties['repro_tram_with_route_numbers_route_numbers'])):''))});
+const layerTrainStops=L.geoJson(json_Clipped_Stops_Train_7,{pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:8,color:'#535353',weight:2,fill:true,fillOpacity:1,fillColor:'#daa520'}),
+  onEachFeature:(f,l)=>l.bindPopup('<b>'+autolinker.link(fmt(f.properties['stop_name']))+'</b>'+(f.properties['repro_train_with_routes_routes_train_route_name']?'<br>Line: '+autolinker.link(fmt(f.properties['repro_train_with_routes_routes_train_route_name'])):''))});
+
+// ================= Routes (grouped by route_name) =================
+function buildRouteGroups(jsonData, colorFn){
+  const routes={}, colors={}, palette=['#30123b','#3e9cfe','#48f882','#e2dc38','#ef5911','#7a0403','#1199ff','#00b894','#e17055','#6c5ce7','#fdcb6e','#0984e3','#e84393','#2ecc71','#d63031','#16a085'];
+  let next=0;
+  const names=Array.from(new Set(jsonData.features.map(f=>String(f.properties['route_name'])))).sort();
+  names.forEach(name=>{
+    const col=colorFn?colorFn(name,next,names.length):palette[next%palette.length];
+    colors[name]=col;
+    routes[name]=L.geoJson(jsonData,{filter:(ft)=>String(ft.properties['route_name'])===name,style:()=>({color:col,weight:2,opacity:1}),onEachFeature:(f,l)=>l.bindPopup('<b>'+autolinker.link(fmt(f.properties['route_name']))+'</b>')});
+    next++;
+  });
+  return { groupLayer:L.layerGroup(Object.values(routes)), routes, colors, names };
+}
+const busRoutePack  = buildRouteGroups(json_Clipped_Routes_Bus_10,(n,i,t)=>`hsl(${30+(i*300/Math.max(1,t-1))},70%,45%)`);
+const tramRoutePack = buildRouteGroups(json_Clipped_Routes_Tram_8,null);
+const trainRoutePack= buildRouteGroups(json_Clipped_Routes_Train_6,(n,i)=>['#3c1bf6','#f6e61f','#ec1d6c','#2ecc71','#e67e22','#3498db'][i%6]);
+
+function populateRouteChecklist(containerId, pack, masterId){
+  const container=$(containerId); container.innerHTML='';
+  Object.keys(pack.routes).sort().forEach(name=>{
+    const id=containerId+'_'+btoa(name).replace(/=/g,'');
+    const row=document.createElement('label');
+    row.innerHTML='<input type="checkbox" id="'+id+'" checked /> <span style="display:inline-block;width:18px;height:3px;vertical-align:middle;background:'+pack.colors[name]+';margin-right:6px;"></span>'+autolinker.link(name);
+    container.appendChild(row);
+    $(id).addEventListener('change',function(){ if(this.checked) pack.routes[name].addTo(map); else map.removeLayer(pack.routes[name]); if(!map.hasLayer(pack.groupLayer)) pack.groupLayer.addTo(map); updateLegend(); });
+  });
+  $(masterId).addEventListener('change',function(){
+    const on=this.checked; if(on && !map.hasLayer(pack.groupLayer)) pack.groupLayer.addTo(map); if(!on && map.hasLayer(pack.groupLayer)) map.removeLayer(pack.groupLayer);
+    Object.keys(pack.routes).forEach(name=>{ const cb=$(containerId+'_'+btoa(name).replace(/=/g,'')); cb.checked=on; if(on) pack.routes[name].addTo(map); else map.removeLayer(pack.routes[name]); });
+    updateLegend();
+  });
+}
+function toggleAll(pack,on){
+  const masterId = pack===busRoutePack?'chkBusRoutes':pack===tramRoutePack?'chkTramRoutes':'chkTrainRoutes';
+  const master=$(masterId);
+  if(on){ if(!map.hasLayer(pack.groupLayer)) pack.groupLayer.addTo(map); master.checked=true; }
+  else { if(map.hasLayer(pack.groupLayer)) map.removeLayer(pack.groupLayer); master.checked=false; }
+  const containerId=pack===busRoutePack?'busRouteList':pack===tramRoutePack?'tramRouteList':'trainRouteList';
+  Object.keys(pack.routes).forEach(name=>{ const cb=$(containerId+'_'+btoa(name).replace(/=/g,'')); if(cb) cb.checked=on; if(on) pack.routes[name].addTo(map); else map.removeLayer(pack.routes[name]); });
+  updateLegend();
+}
+populateRouteChecklist('busRouteList',busRoutePack,'chkBusRoutes');
+populateRouteChecklist('tramRouteList',tramRoutePack,'chkTramRoutes');
+populateRouteChecklist('trainRouteList',trainRoutePack,'chkTrainRoutes');
+
+// Panel defaults
+$('chkBusAcc').checked=true; $('chkBusStops').checked=true; $('chkBusRoutes').checked=true;
+layerBusAcc.addTo(map); layerBusStops.addTo(map); busRoutePack.groupLayer.addTo(map);
+['TrainAcc','TramAcc','BusAcc','BusStops','TramStops','TrainStops'].forEach(k=>{
+  const id='chk'+k; const layer={TrainAcc:layerTrainAcc,TramAcc:layerTramAcc,BusAcc:layerBusAcc,BusStops:layerBusStops,TramStops:layerTramStops,TrainStops:layerTrainStops}[k];
+  $(id).addEventListener('change',()=>{ if($(id).checked) map.addLayer(layer); else map.removeLayer(layer); updateLegend(); });
+});
+$('chkBusRoutes').addEventListener('change',()=>{ if($('chkBusRoutes').checked) busRoutePack.groupLayer.addTo(map); else map.removeLayer(busRoutePack.groupLayer); updateLegend(); });
+$('chkTramRoutes').addEventListener('change',()=>{ if($('chkTramRoutes').checked) tramRoutePack.groupLayer.addTo(map); else map.removeLayer(tramRoutePack.groupLayer); updateLegend(); });
+$('chkTrainRoutes').addEventListener('change',()=>{ if($('chkTrainRoutes').checked) trainRoutePack.groupLayer.addTo(map); else map.removeLayer(trainRoutePack.groupLayer); updateLegend(); });
+
+// ================= Legend =================
+function legendRowsFromBreaks(title, breaks, colors){
+  let html='<h4>'+title+'</h4>'; for(let i=0;i<colors.length;i++){ const lo=breaks[i], hi=breaks[i+1]; if(hi===undefined) continue; html+='<div class="row"><span class="swatch" style="background:'+colors[i]+'"></span>'+lo.toFixed(1)+' – '+hi.toFixed(1)+'</div>'; }
+  html+='<div class="row"><span class="swatch" style="background:#ffffff;border:1px solid #999;"></span>N/A</div>'; return html;
+}
+function legendForRoutes(title, pack, stopsLabel){
+  let html='<h4>'+title+'</h4>'; Object.keys(pack.colors).sort().forEach(name=>{ html+='<div class="row"><span class="line-swatch" style="background:'+pack.colors[name]+'"></span>'+autolinker.link(name)+'</div>'; });
+  html+='<div class="row"><span class="line-swatch" style="background:#cbcbcb;height:10px;border:1px solid #555;"></span>'+stopsLabel+'</div>'; return html;
+}
+function legendForLive(){
+  return '<h4>Live updates</h4>'
+       + '<div class="row"><span class="dot-swatch" style="background:#8e44ad;"></span>Tram delay (≥ 2 min)</div>'
+       + '<div class="row"><span class="dot-swatch" style="background:#1e88e5;"></span>Bus delay (≥ 2 min)</div>'
+       + '<div class="row"><span class="dot-swatch" style="background:#f39c12;"></span>Train delay (≥ 2 min)</div>'
+       + '<div class="row"><span class="dot-swatch" style="background:#9e9e9e;"></span>On time / &lt; threshold</div>';
+}
+function updateLegend(){
+  const box=$('legendBox'); let html='';
+  if(map.hasLayer(layerBusAcc))   html+=legendRowsFromBreaks('Access to closest bus stop (mins)',busBreaks,busColors);
+  if(map.hasLayer(layerTramAcc))  html+=legendRowsFromBreaks('Access to closest tram stop (mins)',tramBreaks,tramColors);
+  if(map.hasLayer(layerTrainAcc)) html+=legendRowsFromBreaks('Access to closest train stop (mins)',trainBreaks,trainColors);
+  if(map.hasLayer(busRoutePack.groupLayer))  html+=legendForRoutes('Bus routes',busRoutePack,'Bus stop');
+  if(map.hasLayer(tramRoutePack.groupLayer)) html+=legendForRoutes('Tram routes',tramRoutePack,'Tram stop');
+  if(map.hasLayer(trainRoutePack.groupLayer))html+=legendForRoutes('Train routes',trainRoutePack,'Train stop');
+  html+=legendForLive(); box.innerHTML=html || '<em>Toggle layers to see the legend.</em>';
+}
+updateLegend();
+
+// ======================= LIVE UPDATES =======================
+const API_BASE='https://cloud-based-application-merribek-pt.vercel.app/api/gtfs';
+const TRAM_UPDATES_URL = `${API_BASE}/tram/trip-updates`;
+const BUS_UPDATES_URL  = `${API_BASE}/bus/trip-updates`;
+const TRAIN_UPDATES_URL= `${API_BASE}/train/trip-updates`;
+const POLL_MS=30000;
+
+let SHOW_ONLY_DELAYS=false;
+const DELAY_THRESHOLD_MIN=2;
+
+const minFromSec=(s)=> s==null?null:Math.round(s/60);
+const fetchJSON=async(url)=>{ const r=await fetch(url,{cache:'no-store'}); return r.json(); };
+
+// ---- stop indexes (with route strings for labels) ----
+function buildStopIndex(layer, idKeys=['stop_id','stopId','stopid','stop_code','stop_code_id','stop_id_1']) {
+  const idx=new Map();
+  layer.eachLayer(l=>{
+    const p=l.feature?.properties||{};
+    const key=idKeys.find(k=>p[k]!==undefined); if(!key) return;
+    const id=String(p[key]);
+    const name=p.stop_name||p.StopName||p.name||id;
+    const routes = p.repro_bus_with_route_numbers_route_numbers
+                || p.repro_tram_with_route_numbers_route_numbers
+                || p.repro_train_with_routes_routes_train_route_name
+                || p.routes || '';
+    const pt=l.getLatLng?l.getLatLng():(l.getBounds?.getCenter?.()??null);
+    if(pt) idx.set(id,{latlng:pt,name,routes});
+  });
+  return idx;
+}
+let tramStopIdx = buildStopIndex(layerTramStops);
+let busStopIdx  = buildStopIndex(layerBusStops);
+let trainStopIdx= buildStopIndex(layerTrainStops);
+function lookupStop(mode, stopId){ if(!stopId) return null; const id=String(stopId);
+  return (mode==='tram'?tramStopIdx:mode==='bus'?busStopIdx:trainStopIdx).get(id)||null; }
+
+// ----- Route label helpers -----
+const TRAIN_LINE_NAME={FKN:"Frankston",UFD:"Upfield",WER:"Werribee",CRB:"Craigieburn",SUN:"Sunbury",PAK:"Pakenham",CRN:"Cranbourne",BEL:"Belgrave",LIL:"Lilydale",GBN:"Glen Waverley",ALM:"Alamein",HBY:"Hurstbridge",MDD:"Mernda",BEG:"Belgrave",CGB:"Craigieburn",STY:"Stony Point"};
+const tailToken=(s)=>{ if(!s) return ""; const t=String(s).split(/[:\-]/).filter(Boolean); return t.length?t[t.length-1]:String(s); };
+function labelForRoute(mode, routeId, stopRoutesStr){
+  const tail=tailToken(routeId);
+  if(mode==="train"){
+    const code=tail.replace(/[^A-Z]/g,"");
+    return TRAIN_LINE_NAME[code] || (stopRoutesStr?.split(/[,;]+/)[0]?.trim() || (code || "Train"));
+  }
+  if(mode==="bus"){
+    const m=String(routeId||"").match(/\d{2,4}/);
+    return m?m[0]: (stopRoutesStr?.split(/[,;]+/)[0]?.trim() || (tail||"Bus"));
+  }
+  if(mode==="tram"){
+    const m=String(routeId||"").match(/\d{1,2}/);
+    return m?`Route ${m[0]}`: (stopRoutesStr?.split(/[,;]+/)[0]?.trim() || (tail?`Route ${tail}`:"Tram"));
+  }
+  return tail||"Route";
+}
+function pickRouteId(e){
+  return e.trip?.route_id || e.trip?.routeId || e.tripUpdate?.trip?.routeId ||
+         e.routeId || e.tripUpdate?.trip?.route?.id || e.tripUpdate?.trip?.route || "—";
+}
+
+window.liveState=window.liveState||{};
+const MODES={
+  tram :{title:'Tram',  short:'TRAM',  url:TRAM_UPDATES_URL,  stopLayer:layerTramStops,  dot:'#8e44ad'},
+  bus  :{title:'Bus',   short:'BUS',   url:BUS_UPDATES_URL,   stopLayer:layerBusStops,   dot:'#1e88e5'},
+  train:{title:'Train', short:'TRAIN', url:TRAIN_UPDATES_URL, stopLayer:layerTrainStops, dot:'#f39c12'}
+};
+Object.keys(MODES).forEach(k=>{ liveState[k]={layer:L.layerGroup().addTo(map), rowsToShow:50, last:[], unavailable:false}; });
+
+// Panel
+const liveHub=L.control({position:'topleft'});
+liveHub.onAdd=function(){
+  const div=L.DomUtil.create('div','leaflet-control livehub');
+  Object.assign(div.style,{background:'rgba(255,255,255,.96)',padding:'8px 10px',borderRadius:'8px',boxShadow:'0 2px 6px rgba(0,0,0,.25)',font:'12px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif'});
+  div.innerHTML=`<b>Live updates</b>
+    <div class="tabs" id="liveTabs"><button data-mode="tram" class="active">Tram</button><button data-mode="bus">Bus</button><button data-mode="train">Train</button></div>
+    <div class="body" id="liveBody"><em class="muted">Loading…</em></div>
+    <div class="footer"><label class="muted" style="display:flex;align-items:center;gap:6px;"><input id="onlyDelays" type="checkbox" /> Only delays (≥ ${DELAY_THRESHOLD_MIN} min)</label><span id="liveCount" class="muted" style="margin-left:auto;"></span><button id="liveMore">Show more</button></div>`;
+  L.DomEvent.disableClickPropagation(div); L.DomEvent.disableScrollPropagation(div);
+  return div;
+};
+liveHub.addTo(map);
+
+// Events
+let current='tram';
+document.addEventListener('change',(e)=>{ if(e.target?.id==='onlyDelays'){ SHOW_ONLY_DELAYS=e.target.checked; renderList(); pollMode(current); }});
+$('onlyDelays').checked=SHOW_ONLY_DELAYS;
+document.addEventListener('click',e=>{
+  const b=e.target?.closest('#liveTabs button[data-mode]'); if(b){ document.querySelectorAll('#liveTabs button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); current=b.dataset.mode; renderList(); }
+  if(e.target?.id==='liveMore'){ liveState[current].rowsToShow+=50; renderList(); }
+});
+
+function renderList(){
+  const body=$('liveBody'), cnt=$('liveCount'); const m=MODES[current], st=liveState[current], ents=st.last;
+  if(st.unavailable){ body.innerHTML=`<em class="muted">${m.title} realtime feed is unavailable for this API key.</em>`; cnt.textContent=''; return; }
+  if(!ents.length){ body.innerHTML=`<em class="muted">No ${m.title.toLowerCase()} updates.</em>`; cnt.textContent=''; return; }
+  const rows=[]; let shown=0;
+  for(const e of ents){
+    const stopRec = lookupStop(current, e.firstStop?.stopId ?? e.tripUpdate?.stopTimeUpdate?.[0]?.stopId);
+    const label = labelForRoute(current, pickRouteId(e), stopRec?.routes);
+    const dSec = e.firstStop?.arrivalDelay ?? e.firstStop?.departureDelay ?? e.delaySeconds ?? e.tripUpdate?.stopTimeUpdate?.[0]?.arrival?.delay ?? e.tripUpdate?.stopTimeUpdate?.[0]?.departure?.delay ?? 0;
+    const dSigned=minFromSec(dSec)??0, dMin=Math.abs(dSigned), rel=(dSigned>=0)?'delay':'early', isDelayed=dMin>=DELAY_THRESHOLD_MIN;
+    if(SHOW_ONLY_DELAYS && !isDelayed) continue;
+    rows.push(`<div class="row"><span class="dot" style="background:${isDelayed?m.dot:'#9e9e9e'};"></span><strong>${m.title} ${label}</strong> — ${dMin} min ${rel}</div>`);
+    if(++shown>=st.rowsToShow) break;
+  }
+  body.innerHTML=rows.length?rows.join(''):`<em class="muted">No ${m.title.toLowerCase()} ${SHOW_ONLY_DELAYS?'delays':'updates'}.</em>`;
+  cnt.textContent=`${Math.min(st.rowsToShow,ents.length)} of ${ents.length}`;
+}
+
+async function pollMode(key){
+  const m=MODES[key], st=liveState[key];
+  try{
+    const data=await fetchJSON(m.url);
+    if(data && data.ok===false && (data.upstreamStatus>=400)) { st.unavailable = (key==='tram'); st.last=[]; if(current===key) renderList(); return; }
+    st.unavailable=false; st.layer.clearLayers();
+    const ents=[];
+    (data.entities||data.entity||[]).forEach(e=>{
+      const stop=e.firstStop?.stopId ?? e.tripUpdate?.stopTimeUpdate?.[0]?.stopId; const rec=lookupStop(key,stop);
+      const dSec=e.firstStop?.arrivalDelay ?? e.firstStop?.departureDelay ?? e.delaySeconds ?? e.tripUpdate?.stopTimeUpdate?.[0]?.arrival?.delay ?? e.tripUpdate?.stopTimeUpdate?.[0]?.departure?.delay ?? 0;
+      const dMinAbs=Math.abs(minFromSec(dSec)??0), isDelayed=dMinAbs>=DELAY_THRESHOLD_MIN, show=!SHOW_ONLY_DELAYS || isDelayed;
+      if(rec && show){
+        const label=labelForRoute(key, pickRouteId(e), rec.routes);
+        L.circleMarker(rec.latlng,{radius:6,color:isDelayed?m.dot:'#9e9e9e',weight:2,fill:true,fillOpacity:isDelayed?0.9:0.4})
+          .bindTooltip(`${m.short} ${label} · ${dMinAbs} min ${(dSec>=0)?'delay':'early'}`,{sticky:true}).addTo(st.layer);
+      }
+      ents.push(e);
+    });
+    st.last=ents; if(current===key) renderList(); updateLegend();
+  }catch(err){
+    if(key==='tram'){ st.unavailable=true; st.last=[]; if(current===key) renderList(); return; }
+    console.error('Live poll failed',key,err);
+    if(current===key) $('liveBody').innerHTML=`<span style="color:#b00;">Failed ${m.title} feed.</span>`;
+  }
+}
+
+// Start polling
+(async function loop(){ await Promise.all([pollMode('tram'), new Promise(r=>setTimeout(r,200)).then(()=>pollMode('bus')), new Promise(r=>setTimeout(r,400)).then(()=>pollMode('train'))]); setTimeout(loop,POLL_MS); })();
+setTimeout(()=>renderList(),600);
+</script>
+</body>
+</html>
