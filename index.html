@@ -56,7 +56,6 @@ html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; }
 }
 .license-card p{ margin:4px 0; }
 .license-card img{ height:20px; vertical-align:middle; }
-
 </style>
 </head>
 <body>
@@ -134,8 +133,6 @@ html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; }
 <script src="data/Clipped_Routes_Bus_10.js"></script>
 <script src="data/Clipped_Buses_11.js"></script>
 
-<div class="legend" id="legendBox"></div>
-
 <!-- License / attribution -->
 <div class="license-card">
   <p>
@@ -144,12 +141,11 @@ html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; }
     </a>
   </p>
   <p>
-    "This Cloud-based Open-source GIS Application is developed" by
-    <a href="Callum Hampson-Clarke" target="_blank" rel="noopener">Your Name</a>
+    “This Cloud-based Open-source GIS Application is developed” by
+    <a href="https://example.com/photographer" target="_blank" rel="noopener">Callum Hampson-Clarke</a>
     — <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="license noopener">CC BY 4.0</a>
   </p>
 </div>
-
 
 <script>
 // ====================== Map base ======================
@@ -211,10 +207,14 @@ const layerTrainStops=L.geoJson(json_Clipped_Stops_Train_7,{pointToLayer:(f,ll)=
   onEachFeature:(f,l)=>l.bindPopup('<b>'+autolinker.link(fmt(f.properties['stop_name']))+'</b>'+(f.properties['repro_train_with_routes_routes_train_route_name']?'<br>Line: '+autolinker.link(fmt(f.properties['repro_train_with_routes_routes_train_route_name'])):''))});
 
 // ================= Routes (grouped by route_name) =================
-function buildRouteGroups(jsonData, colorFn){
+function buildRouteGroups(jsonData, colorFn, nameFilter){
   const routes={}, colors={}, palette=['#30123b','#3e9cfe','#48f882','#e2dc38','#ef5911','#7a0403','#1199ff','#00b894','#e17055','#6c5ce7','#fdcb6e','#0984e3','#e84393','#2ecc71','#d63031','#16a085'];
   let next=0;
-  const names=Array.from(new Set(jsonData.features.map(f=>String(f.properties['route_name'])))).sort();
+  const names = Array.from(new Set(
+    jsonData.features
+      .map(f=>String(f.properties['route_name']))
+      .filter(n => !nameFilter || nameFilter(n))
+  )).sort();
   names.forEach(name=>{
     const col=colorFn?colorFn(name,next,names.length):palette[next%palette.length];
     colors[name]=col;
@@ -223,10 +223,16 @@ function buildRouteGroups(jsonData, colorFn){
   });
   return { groupLayer:L.layerGroup(Object.values(routes)), routes, colors, names };
 }
+
 const busRoutePack  = buildRouteGroups(json_Clipped_Routes_Bus_10,(n,i,t)=>`hsl(${30+(i*300/Math.max(1,t-1))},70%,45%)`);
 const tramRoutePack = buildRouteGroups(json_Clipped_Routes_Tram_8,null);
-const trainRoutePack= buildRouteGroups(json_Clipped_Routes_Train_6,(n,i)=>['#3c1bf6','#f6e61f','#ec1d6c','#2ecc71','#e67e22','#3498db'][i%6]);
+const trainRoutePack= buildRouteGroups(
+  json_Clipped_Routes_Train_6,
+  (n,i)=>['#3c1bf6','#f6e61f','#ec1d6c','#2ecc71','#e67e22','#3498db'][i%6],
+  (n)=> /Craigieburn|Upfield/i.test(n) // keep only these lines
+);
 
+// checklists
 function populateRouteChecklist(containerId, pack, masterId){
   const container=$(containerId); container.innerHTML='';
   Object.keys(pack.routes).sort().forEach(name=>{
@@ -303,6 +309,7 @@ const POLL_MS=30000;
 
 let SHOW_ONLY_DELAYS=false;
 const DELAY_THRESHOLD_MIN=2;
+const ALLOWED_TRAIN = /Craigieburn|Upfield/i;
 
 const minFromSec=(s)=> s==null?null:Math.round(s/60);
 const fetchJSON=async(url)=>{ const r=await fetch(url,{cache:'no-store'}); return r.json(); };
@@ -331,27 +338,48 @@ function lookupStop(mode, stopId){ if(!stopId) return null; const id=String(stop
   return (mode==='tram'?tramStopIdx:mode==='bus'?busStopIdx:trainStopIdx).get(id)||null; }
 
 // ----- Route label helpers -----
-const TRAIN_LINE_NAME={FKN:"Frankston",UFD:"Upfield",WER:"Werribee",CRB:"Craigieburn",SUN:"Sunbury",PAK:"Pakenham",CRN:"Cranbourne",BEL:"Belgrave",LIL:"Lilydale",GBN:"Glen Waverley",ALM:"Alamein",HBY:"Hurstbridge",MDD:"Mernda",BEG:"Belgrave",CGB:"Craigieburn",STY:"Stony Point"};
-const tailToken=(s)=>{ if(!s) return ""; const t=String(s).split(/[:\-]/).filter(Boolean); return t.length?t[t.length-1]:String(s); };
+const TRAIN_LINE_NAME = {
+  FKN:"Frankston", UFD:"Upfield", WER:"Werribee", CRB:"Craigieburn", SUN:"Sunbury",
+  PAK:"Pakenham", CRN:"Cranbourne", BEL:"Belgrave", LIL:"Lilydale", GBN:"Glen Waverley",
+  ALM:"Alamein", HBY:"Hurstbridge", MDD:"Mernda", BEG:"Belgrave", CGB:"Craigieburn", STY:"Stony Point"
+};
+const tailToken = (s)=>{ if(!s) return ""; const t=String(s).split(/[:\-]/).filter(Boolean); return t.length?t[t.length-1]:String(s); };
+function extractNumber(str){
+  const s = String(str || "");
+  let m = s.match(/-(\d{1,4})(?=[-:])/); if (m) return m[1];
+  m = s.match(/\b(\d{1,4})\b/); return m ? m[1] : null;
+}
 function labelForRoute(mode, routeId, stopRoutesStr){
-  const tail=tailToken(routeId);
-  if(mode==="train"){
-    const code=tail.replace(/[^A-Z]/g,"");
-    return TRAIN_LINE_NAME[code] || (stopRoutesStr?.split(/[,;]+/)[0]?.trim() || (code || "Train"));
+  const tail = tailToken(routeId);
+  if (mode === "train") {
+    const code = tail.replace(/[^A-Z]/g,"");
+    const byCode = TRAIN_LINE_NAME[code];
+    const byStop = stopRoutesStr?.split(/[,;]+/)[0]?.trim();
+    return byCode || byStop || (code || "Train");
   }
-  if(mode==="bus"){
-    const m=String(routeId||"").match(/\d{2,4}/);
-    return m?m[0]: (stopRoutesStr?.split(/[,;]+/)[0]?.trim() || (tail||"Bus"));
+  if (mode === "tram") {
+    const num = extractNumber(routeId);
+    const byStop = stopRoutesStr?.match(/\b(\d{1,3})\b/)?.[1];
+    return num ? `Route ${num}` : (byStop ? `Route ${byStop}` : (tail ? `Route ${tail}` : "Tram"));
   }
-  if(mode==="tram"){
-    const m=String(routeId||"").match(/\d{1,2}/);
-    return m?`Route ${m[0]}`: (stopRoutesStr?.split(/[,;]+/)[0]?.trim() || (tail?`Route ${tail}`:"Tram"));
+  if (mode === "bus") {
+    const num = extractNumber(routeId) || extractNumber(stopRoutesStr);
+    return num || (tail || "Bus");
   }
-  return tail||"Route";
+  return tail || "Route";
 }
 function pickRouteId(e){
-  return e.trip?.route_id || e.trip?.routeId || e.tripUpdate?.trip?.routeId ||
-         e.routeId || e.tripUpdate?.trip?.route?.id || e.tripUpdate?.trip?.route || "—";
+  return (
+    e.trip?.route_id ||
+    e.trip?.routeId ||
+    e.tripUpdate?.trip?.routeId ||
+    e.routeId ||
+    e.tripUpdate?.trip?.route?.id ||
+    e.tripUpdate?.trip?.route ||
+    e.tripUpdate?.trip?.tripId ||
+    e.id ||
+    "—"
+  );
 }
 
 window.liveState=window.liveState||{};
@@ -393,6 +421,7 @@ function renderList(){
   for(const e of ents){
     const stopRec = lookupStop(current, e.firstStop?.stopId ?? e.tripUpdate?.stopTimeUpdate?.[0]?.stopId);
     const label = labelForRoute(current, pickRouteId(e), stopRec?.routes);
+    if (current === 'train' && !ALLOWED_TRAIN.test(label)) continue;  // filter to Craigieburn + Upfield
     const dSec = e.firstStop?.arrivalDelay ?? e.firstStop?.departureDelay ?? e.delaySeconds ?? e.tripUpdate?.stopTimeUpdate?.[0]?.arrival?.delay ?? e.tripUpdate?.stopTimeUpdate?.[0]?.departure?.delay ?? 0;
     const dSigned=minFromSec(dSec)??0, dMin=Math.abs(dSigned), rel=(dSigned>=0)?'delay':'early', isDelayed=dMin>=DELAY_THRESHOLD_MIN;
     if(SHOW_ONLY_DELAYS && !isDelayed) continue;
@@ -414,8 +443,11 @@ async function pollMode(key){
       const stop=e.firstStop?.stopId ?? e.tripUpdate?.stopTimeUpdate?.[0]?.stopId; const rec=lookupStop(key,stop);
       const dSec=e.firstStop?.arrivalDelay ?? e.firstStop?.departureDelay ?? e.delaySeconds ?? e.tripUpdate?.stopTimeUpdate?.[0]?.arrival?.delay ?? e.tripUpdate?.stopTimeUpdate?.[0]?.departure?.delay ?? 0;
       const dMinAbs=Math.abs(minFromSec(dSec)??0), isDelayed=dMinAbs>=DELAY_THRESHOLD_MIN, show=!SHOW_ONLY_DELAYS || isDelayed;
+
+      const label = labelForRoute(key, pickRouteId(e), rec?.routes);
+      if (key==='train' && !ALLOWED_TRAIN.test(label)) { ents.push(e); return; } // filter trains
+
       if(rec && show){
-        const label=labelForRoute(key, pickRouteId(e), rec.routes);
         L.circleMarker(rec.latlng,{radius:6,color:isDelayed?m.dot:'#9e9e9e',weight:2,fill:true,fillOpacity:isDelayed?0.9:0.4})
           .bindTooltip(`${m.short} ${label} · ${dMinAbs} min ${(dSec>=0)?'delay':'early'}`,{sticky:true}).addTo(st.layer);
       }
