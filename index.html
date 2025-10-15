@@ -75,7 +75,7 @@ html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; }
   <label><input type="checkbox" id="chkTramAcc"  /> Tram accessibility (mins)</label>
   <label><input type="checkbox" id="chkBusAcc"   /> Bus accessibility (mins)</label>
 
-  <details id="busRoutesGroup">
+  <details id="busRoutesGroup" open>
     <summary>Bus</summary>
     <label><input type="checkbox" id="chkBusRoutes" /> Bus routes</label>
     <label><input type="checkbox" id="chkBusStops"  /> Bus stops</label>
@@ -142,7 +142,7 @@ html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; }
   </p>
   <p>
     “This Cloud-based Open-source GIS Application is developed” by
-    <a href="https://example.com/photographer" target="_blank" rel="noopener">Callum Hampson-Clarke</a>
+    <a href="#" target="_blank" rel="noopener">Callum Hampson-Clarke</a>
     — <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="license noopener">CC BY 4.0</a>
   </p>
 </div>
@@ -168,7 +168,29 @@ const tramBreaks=[0.09,3.79,7.28,17.37,43.95,107.08], tramColors=['#2b83ba','#ab
 
 // ===================== N/A mesh blocks =====================
 const NA_MESH_BLOCKS = ['20631938510','20631936490','20720440000','20470300000','20714680000','20472080000','20631993660','20477603000','20631994450','20631991420','20463690000','20461910000','20639760000'];
-const isNAFeature = (f)=> NA_MESH_BLOCKS.includes(String(f.properties['MB_CODE21']));
+const isNAFeature = (f)=> NA_MESH_BLOCKS.includes(String(f.properties['MB_CODE21']))
+
+// ---------- helpers for route parsing ----------
+const numFromName = (name)=> {
+  // last 1-4 digit number in a string (good for "…508" or "Route 86" etc.)
+  const m = String(name||'').match(/(\d{1,4})(?!.*\d)/);
+  return m ? m[1] : null;
+};
+const idSecondNumber = (idStr)=> {
+  // e.g. "03-86--2-T5-136476005" -> "86"
+  const m = String(idStr||'').match(/^\d+-(\d{1,4})\b/);
+  return m ? m[1] : null;
+};
+
+// ---------- allowed sets ----------
+const ALLOWED_TRAIN_NAME = /\b(Craigieburn|Upfield)\b/i;
+
+const ALLOWED_TRAM = new Set(['1','5','6','19','96']);
+
+const ALLOWED_BUS = new Set([
+  '508','959','477','509','902','504','530','534','512','513','514','503','951','490','536','527',
+  '510','250','561','478','482','505','506','903','531','251','542','479','526'
+]);
 
 // ===================== Layers =====================
 function styleTrainAcc(f){ if (isNAFeature(f)) return { color:'#cccccc', weight:1, fill:true, fillOpacity:1, fillColor:'#ffffff' };
@@ -224,12 +246,21 @@ function buildRouteGroups(jsonData, colorFn, nameFilter){
   return { groupLayer:L.layerGroup(Object.values(routes)), routes, colors, names };
 }
 
-const busRoutePack  = buildRouteGroups(json_Clipped_Routes_Bus_10,(n,i,t)=>`hsl(${30+(i*300/Math.max(1,t-1))},70%,45%)`);
-const tramRoutePack = buildRouteGroups(json_Clipped_Routes_Tram_8,null);
+// --- STATIC ROUTE FILTERS ---
+const busRoutePack  = buildRouteGroups(
+  json_Clipped_Routes_Bus_10,
+  (n,i,t)=>`hsl(${30+(i*300/Math.max(1,t-1))},70%,45%)`,
+  (n)=> { const num=numFromName(n); return num && ALLOWED_BUS.has(num); }
+);
+const tramRoutePack = buildRouteGroups(
+  json_Clipped_Routes_Tram_8,
+  null,
+  (n)=> { const num=numFromName(n); return num && ALLOWED_TRAM.has(num); }
+);
 const trainRoutePack= buildRouteGroups(
   json_Clipped_Routes_Train_6,
   (n,i)=>['#3c1bf6','#f6e61f','#ec1d6c','#2ecc71','#e67e22','#3498db'][i%6],
-  (n)=> /Craigieburn|Upfield/i.test(n) // keep only these lines
+  (n)=> ALLOWED_TRAIN_NAME.test(n) // only Craigieburn + Upfield
 );
 
 // checklists
@@ -309,7 +340,6 @@ const POLL_MS=30000;
 
 let SHOW_ONLY_DELAYS=false;
 const DELAY_THRESHOLD_MIN=2;
-const ALLOWED_TRAIN = /Craigieburn|Upfield/i;
 
 const minFromSec=(s)=> s==null?null:Math.round(s/60);
 const fetchJSON=async(url)=>{ const r=await fetch(url,{cache:'no-store'}); return r.json(); };
@@ -338,11 +368,7 @@ function lookupStop(mode, stopId){ if(!stopId) return null; const id=String(stop
   return (mode==='tram'?tramStopIdx:mode==='bus'?busStopIdx:trainStopIdx).get(id)||null; }
 
 // ----- Route label helpers -----
-const TRAIN_LINE_NAME = {
-  FKN:"Frankston", UFD:"Upfield", WER:"Werribee", CRB:"Craigieburn", SUN:"Sunbury",
-  PAK:"Pakenham", CRN:"Cranbourne", BEL:"Belgrave", LIL:"Lilydale", GBN:"Glen Waverley",
-  ALM:"Alamein", HBY:"Hurstbridge", MDD:"Mernda", BEG:"Belgrave", CGB:"Craigieburn", STY:"Stony Point"
-};
+const TRAIN_LINE_NAME = { UFD:"Upfield", CRB:"Craigieburn", CGB:"Craigieburn" };
 const tailToken = (s)=>{ if(!s) return ""; const t=String(s).split(/[:\-]/).filter(Boolean); return t.length?t[t.length-1]:String(s); };
 function extractNumber(str){
   const s = String(str || "");
@@ -418,16 +444,34 @@ function renderList(){
   if(st.unavailable){ body.innerHTML=`<em class="muted">${m.title} realtime feed is unavailable for this API key.</em>`; cnt.textContent=''; return; }
   if(!ents.length){ body.innerHTML=`<em class="muted">No ${m.title.toLowerCase()} updates.</em>`; cnt.textContent=''; return; }
   const rows=[]; let shown=0;
+
   for(const e of ents){
     const stopRec = lookupStop(current, e.firstStop?.stopId ?? e.tripUpdate?.stopTimeUpdate?.[0]?.stopId);
-    const label = labelForRoute(current, pickRouteId(e), stopRec?.routes);
-    if (current === 'train' && !ALLOWED_TRAIN.test(label)) continue;  // filter to Craigieburn + Upfield
+    // derive display label & numbers
+    const routeId = pickRouteId(e);
+    const label = labelForRoute(current, routeId, stopRec?.routes);
+
+    // FILTERS for list
+    if (current === 'train' && !ALLOWED_TRAIN_NAME.test(label)) continue;
+
+    if (current === 'tram') {
+      const num = idSecondNumber(e.id) || extractNumber(routeId) || extractNumber(label);
+      if (!num || !ALLOWED_TRAM.has(String(num))) continue;
+    }
+
+    if (current === 'bus') {
+      const num = extractNumber(routeId) || idSecondNumber(e.id) || extractNumber(label) || extractNumber(stopRec?.routes);
+      if (!num || !ALLOWED_BUS.has(String(num))) continue;
+    }
+
     const dSec = e.firstStop?.arrivalDelay ?? e.firstStop?.departureDelay ?? e.delaySeconds ?? e.tripUpdate?.stopTimeUpdate?.[0]?.arrival?.delay ?? e.tripUpdate?.stopTimeUpdate?.[0]?.departure?.delay ?? 0;
     const dSigned=minFromSec(dSec)??0, dMin=Math.abs(dSigned), rel=(dSigned>=0)?'delay':'early', isDelayed=dMin>=DELAY_THRESHOLD_MIN;
     if(SHOW_ONLY_DELAYS && !isDelayed) continue;
+
     rows.push(`<div class="row"><span class="dot" style="background:${isDelayed?m.dot:'#9e9e9e'};"></span><strong>${m.title} ${label}</strong> — ${dMin} min ${rel}</div>`);
     if(++shown>=st.rowsToShow) break;
   }
+
   body.innerHTML=rows.length?rows.join(''):`<em class="muted">No ${m.title.toLowerCase()} ${SHOW_ONLY_DELAYS?'delays':'updates'}.</em>`;
   cnt.textContent=`${Math.min(st.rowsToShow,ents.length)} of ${ents.length}`;
 }
@@ -441,11 +485,25 @@ async function pollMode(key){
     const ents=[];
     (data.entities||data.entity||[]).forEach(e=>{
       const stop=e.firstStop?.stopId ?? e.tripUpdate?.stopTimeUpdate?.[0]?.stopId; const rec=lookupStop(key,stop);
+
+      // Build labels/numbers then FILTER before drawing
+      const routeId = pickRouteId(e);
+      const label   = labelForRoute(key, routeId, rec?.routes);
+
+      if (key==='train' && !ALLOWED_TRAIN_NAME.test(label)) { ents.push(e); return; }
+
+      if (key==='tram') {
+        const tnum = idSecondNumber(e.id) || extractNumber(routeId) || extractNumber(label);
+        if (!tnum || !ALLOWED_TRAM.has(String(tnum))) { ents.push(e); return; }
+      }
+
+      if (key==='bus') {
+        const bnum = extractNumber(routeId) || idSecondNumber(e.id) || extractNumber(label) || extractNumber(rec?.routes);
+        if (!bnum || !ALLOWED_BUS.has(String(bnum))) { ents.push(e); return; }
+      }
+
       const dSec=e.firstStop?.arrivalDelay ?? e.firstStop?.departureDelay ?? e.delaySeconds ?? e.tripUpdate?.stopTimeUpdate?.[0]?.arrival?.delay ?? e.tripUpdate?.stopTimeUpdate?.[0]?.departure?.delay ?? 0;
       const dMinAbs=Math.abs(minFromSec(dSec)??0), isDelayed=dMinAbs>=DELAY_THRESHOLD_MIN, show=!SHOW_ONLY_DELAYS || isDelayed;
-
-      const label = labelForRoute(key, pickRouteId(e), rec?.routes);
-      if (key==='train' && !ALLOWED_TRAIN.test(label)) { ents.push(e); return; } // filter trains
 
       if(rec && show){
         L.circleMarker(rec.latlng,{radius:6,color:isDelayed?m.dot:'#9e9e9e',weight:2,fill:true,fillOpacity:isDelayed?0.9:0.4})
